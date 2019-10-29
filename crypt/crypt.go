@@ -5,66 +5,54 @@ import (
 	"crypto/cipher"
 	"crypto/md5"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"io"
 )
 
-// genPassPhrase This function take key[string] as a parameter and converts it into byte array of length 16.
-func genPassPhrase(key string) []byte {
+func encryptStream(key string, iv []byte) cipher.Stream {
+	block := newCipherBlock(key)
+	return cipher.NewCFBEncrypter(block, iv)
+}
+
+// EncryptWriter will return a writer that will write encrypted data to
+// the original writer.
+func EncryptWriter(key string, w io.Writer) (*cipher.StreamWriter, error) {
+	iv := make([]byte, aes.BlockSize)
+	io.ReadFull(rand.Reader, iv)
+	stream := encryptStream(key, iv)
+	_, err := w.Write(iv)
+	if err != nil {
+		return nil, err
+	}
+	return &cipher.StreamWriter{S: stream, W: w}, nil
+}
+
+func decryptStream(key string, iv []byte) cipher.Stream {
+	block := newCipherBlock(key)
+	return cipher.NewCFBDecrypter(block, iv)
+}
+
+// DecryptReader will return a reader that will decrypt data from the
+// provided reader and give the user a way to read that data as it if was
+// not encrypted.
+func DecryptReader(key string, r io.Reader) (*cipher.StreamReader, error) {
+	iv := make([]byte, aes.BlockSize)
+	n, err := r.Read(iv)
+	//apart from nil check we should also ensure that
+	//number of bytes that are read must be 16
+	if n < len(iv) || err != nil {
+		return nil, errors.New("encrypt: unable to read the full iv")
+	}
+	stream := decryptStream(key, iv)
+
+	return &cipher.StreamReader{S: stream, R: r}, nil
+}
+
+//newCipherBlock return cipher block containing hashed version of key
+func newCipherBlock(key string) cipher.Block {
 	hasher := md5.New()
 	hasher.Write([]byte(key))
-	return hasher.Sum(nil)
-}
-
-// Encrypt Encrypt will take in a key and plain text and returns
-// hex representation of ciphertext
-func Encrypt(textToEncrypt, key string) (string, error) {
-
-	plaintext := []byte(textToEncrypt)
-	passPhrase := genPassPhrase(key)
-
-	// Error will never be called as we are passing 16 byte array always
-	block, err := aes.NewCipher(passPhrase)
-	if err != nil {
-		return "", errors.New("invalid passphrase")
-	}
-	//Initialization Vector
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", errors.New("error occurred in initialization vector(IV)")
-	}
-
-	// Generating cipher text
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-
-	return hex.EncodeToString(ciphertext), nil
-}
-
-// Decrypt Decrypt will take in a key and hex represented ciphertext and converts
-// into original plaintext
-func Decrypt(cipherText, key string) (string, error) {
-
-	passPhrase := genPassPhrase(key)
-	ciphertext, _ := hex.DecodeString(cipherText)
-
-	block, err := aes.NewCipher(passPhrase)
-	if err != nil {
-		return "", errors.New("invalid passphrase")
-	}
-
-	if len(ciphertext) < aes.BlockSize {
-		return "", errors.New("ciphertext too short")
-	}
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
-
-	stream := cipher.NewCFBDecrypter(block, iv)
-
-	// XORKeyStream can work in-place if the two arguments are the same.
-	stream.XORKeyStream(ciphertext, ciphertext)
-	return string(ciphertext), nil
-
+	cipherKey := hasher.Sum(nil)
+	block, _ := aes.NewCipher(cipherKey)
+	return block
 }

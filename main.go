@@ -1,28 +1,9 @@
 package main
 
-import (
-	"log"
-	"vault"
-)
+import "cmds"
 
 func main() {
-
-	v := vault.NewVault("ILOVEMYINDIA", "/home/gslab/Coding/goworkspace/src/abc.txt")
-	err := v.Set("Username", "P1234567890")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	err = v.Set("mo-no", "1234567890")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	err = v.Set("personal", "blah-blah")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
+	cmds.RootCmd.Execute()
 }
 
 //***********Encode - Convert MAP to JSON*************
